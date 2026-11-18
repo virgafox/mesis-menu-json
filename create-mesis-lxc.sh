@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Crea un container LXC (Debian 13) su Proxmox VE con Docker e avvia il servizio
 # mesis-menu-json prelevando l'immagine da ghcr.io.
-# Da eseguire come root sull'host Proxmox (one-liner):
+# Da eseguire come root sull'host Proxmox (one-liner, parametri passati inline):
+#   IP_CIDR=172.16.1.16/22 GATEWAY=172.16.0.1 \
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/virgafox/mesis-menu-json/master/create-mesis-lxc.sh)"
 set -euo pipefail
 
@@ -15,8 +16,8 @@ MEMORY_MB="${MEMORY_MB:-1024}"                  # è un tetto, non una riserva: 
 SWAP_MB="${SWAP_MB:-256}"
 CORES="${CORES:-1}"
 BRIDGE="${BRIDGE:-vmbr0}"
-IP_CIDR="${IP_CIDR:-dhcp}"            # "dhcp" oppure un IP/CIDR statico
-GATEWAY="${GATEWAY:-}"                # usato solo con IP statico
+IP_CIDR="${IP_CIDR:-dhcp}"                      # "dhcp" oppure un IP/CIDR statico (es. 172.16.1.16/22)
+GATEWAY="${GATEWAY:-}"                          # richiesto solo con IP statico
 DNS="${DNS:-}"                                  # opzionale, es. 192.168.1.1
 VLAN_TAG="${VLAN_TAG:-}"                        # opzionale
 
@@ -38,10 +39,11 @@ log() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 command -v pct >/dev/null || { echo "pct non trovato: questo script va eseguito su un host Proxmox VE."; exit 1; }
 if pct status "$CTID" &>/dev/null; then echo "Il CTID $CTID esiste già."; exit 1; fi
 
-log "Cerco il template Debian 13"
+ARCH="$(dpkg --print-architecture)"   # amd64 su un normale PC/server x86
+log "Cerco il template Debian 13 ($ARCH)"
 pveam update >/dev/null
-TEMPLATE="$(pveam available --section system | awk '/debian-13-standard/ {print $2}' | sort -V | tail -1)"
-[[ -n "$TEMPLATE" ]] || { echo "Template debian-13-standard non trovato in pveam."; exit 1; }
+TEMPLATE="$(pveam available --section system | awk '{print $2}' | grep -E "^debian-13-standard_.*_${ARCH}\.tar" | sort -V | tail -1)"
+[[ -n "$TEMPLATE" ]] || { echo "Template debian-13-standard ($ARCH) non trovato in pveam."; exit 1; }
 if ! pveam list "$TEMPLATE_STORAGE" | grep -q "$TEMPLATE"; then
   log "Scarico $TEMPLATE"
   pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
@@ -58,6 +60,7 @@ PCT_ARGS=(
   --cores "$CORES" --memory "$MEMORY_MB" --swap "$SWAP_MB"
   --rootfs "${ROOTFS_STORAGE}:${DISK_GB}"
   --net0 "$NET"
+  --arch "$ARCH"
   --unprivileged 1
   --features nesting=1,keyctl=1          # necessari per Docker in LXC non privilegiato
   --onboot 1
@@ -119,4 +122,4 @@ else
 fi
 echo
 echo "Aggiornare l'immagine in futuro:"
-echo "  pct exec $CTID -- bash -c 'docker pull $IMAGE && docker rm -f mesis-menu-api && docker run -d --name mesis-menu-api --restart unless-stopped --init --ipc=host -p ${HOST_PORT}:8000 -e MESIS_MUNICIPIO=$MESIS_MUNICIPIO -e MESIS_CICLO=$MESIS_CICLO -e TZ=$TIMEZONE $IMAGE'"
+echo "  pct exec $CTID -- bash -c 'docker pull $IMAGE && docker rm -f mesis-menu-api && docker run -d --name mesis-menu-api --restart unless-stopped --init --ipc=host -p ${HOST_PORT}:8000 -e MESIS_MUNICIPIO=$MESIS_MUNICIPIO -e MESIS_CICLO=$MESIS_CICLO -e CACHE_TTL_SECONDS=$CACHE_TTL_SECONDS -e TZ=$TIMEZONE $IMAGE'"
