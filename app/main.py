@@ -40,6 +40,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MESIS menu API", version="1.0.0", lifespan=lifespan)
 
+@app.middleware("http")
+async def add_utf8_charset(request, call_next):
+    resp = await call_next(request)
+    if resp.headers.get("content-type", "").startswith("application/json"):
+        resp.headers["content-type"] = "application/json; charset=utf-8"
+    return resp
+
 
 async def fetch_html(month: int, year: int, municipio: int, ciclo: int) -> str:
     url = f"{BASE_URL}?municipio={municipio}&cicloScolastico={ciclo}&dataSelezionata=01/{month:02d}/{year}"
