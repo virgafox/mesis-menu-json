@@ -1,0 +1,19 @@
+services:
+  mesis-menu-api:
+    build: .
+    container_name: mesis-menu-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      MESIS_MUNICIPIO: "4"
+      MESIS_CICLO: "4"
+      CACHE_TTL_SECONDS: "21600"   # 6 ore
+      TZ: Europe/Rome
+    ipc: host          # consigliato da Playwright per Chromium
+    init: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
